@@ -99,6 +99,26 @@ fn parse_message(data: &str) -> Result<AuthRequest, AuthError> {
 }
 
 fn validate_signature(request: &AuthRequest) -> Result<(), AuthError>{
+    let secp = bitcoin::secp256k1::Secp256k1::verification_only();
+    let signature = &request.signature;
+    let message = serde_json::to_string(&request.message).unwrap();
+    let message = message.as_str();
+    let sig = base64::decode(&signature).unwrap();
+    let recid = bitcoin::secp256k1::recovery::RecoveryId::from_i32(i32::from((sig[0] - 27) & 3)).unwrap();
+    let recsig = bitcoin::secp256k1::recovery::RecoverableSignature::from_compact(&sig[1..], recid).unwrap();
+    let hash = bitcoin::util::misc::signed_msg_hash(&message);
+    let msg = bitcoin::secp256k1::Message::from_slice(&hash[..]).unwrap();
+
+    let pubkey = bitcoin::util::key::PublicKey {
+        key: secp.recover(&msg, &recsig).unwrap(),
+        compressed: ((sig[0] - 27) & 4) != 0,
+    };
+
+    let address = bitcoin::Address::p2pkh(&pubkey, bitcoin::network::constants::Network::from_magic(0xD9B4BEF9).unwrap());
+
+    println!("{} \n {} \n {} {} *** {}", message, hash, pubkey.key, address, sig.len());
+
+    assert!(false);
     Ok(())
     //Err(AuthError::WrongSignature)
 }

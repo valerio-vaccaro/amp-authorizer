@@ -98,29 +98,28 @@ fn parse_message(data: &str) -> Result<AuthRequest, AuthError> {
     }
 }
 
-fn validate_signature(request: &AuthRequest) -> Result<(), AuthError>{
-    let secp = bitcoin::secp256k1::Secp256k1::verification_only();
+fn validate_signature(request: &AuthRequest, ampaddress: String) -> Result<(), AuthError>{
+    let secp = elements::bitcoin::secp256k1::Secp256k1::verification_only();
     let signature = &request.signature;
     let message = serde_json::to_string(&request.message).unwrap();
     let message = message.as_str();
     let sig = base64::decode(&signature).unwrap();
-    let recid = bitcoin::secp256k1::recovery::RecoveryId::from_i32(i32::from((sig[0] - 27) & 3)).unwrap();
-    let recsig = bitcoin::secp256k1::recovery::RecoverableSignature::from_compact(&sig[1..], recid).unwrap();
-    let hash = bitcoin::util::misc::signed_msg_hash(&message);
-    let msg = bitcoin::secp256k1::Message::from_slice(&hash[..]).unwrap();
+    let recid = elements::bitcoin::secp256k1::recovery::RecoveryId::from_i32(i32::from((sig[0] - 27) & 3)).unwrap();
+    let recsig = elements::bitcoin::secp256k1::recovery::RecoverableSignature::from_compact(&sig[1..], recid).unwrap();
+    let hash = elements::bitcoin::util::misc::signed_msg_hash(&message);
+    let msg = elements::bitcoin::secp256k1::Message::from_slice(&hash[..]).unwrap();
 
-    let pubkey = bitcoin::util::key::PublicKey {
+    let pubkey = elements::bitcoin::util::key::PublicKey {
         key: secp.recover(&msg, &recsig).unwrap(),
         compressed: ((sig[0] - 27) & 4) != 0,
     };
 
-    let address = bitcoin::Address::p2pkh(&pubkey, bitcoin::network::constants::Network::from_magic(0xD9B4BEF9).unwrap());
-
-    println!("{} \n {} \n {} {} *** {}", message, hash, pubkey.key, address, sig.len());
-
-    assert!(false);
-    Ok(())
-    //Err(AuthError::WrongSignature)
+    let address = elements::Address::p2pkh(&pubkey, None, &elements::AddressParams::LIQUID);
+    if address.to_string() == ampaddress {
+        Ok(())
+    } else {
+        Err(AuthError::WrongSignature)
+    }
 }
 
 fn validate_asset_id(request: &AuthRequest, auth_asset_id: Vec<&str>) -> Result<(), AuthError>{
@@ -191,6 +190,7 @@ fn validate(data: &str) -> &str {
     let auth_allow_changes: bool = true;
     let auth_min_amount: u64 = 0;
     let auth_max_amount: u64 = 2100000000000000;
+    let auth_signature_address: String = "Q8bhjhRpKAEvJ431vvLbdfXwsEgezr5EqE".to_string();
 
     let mut result: bool = true;
     let mut errors: String = "".to_string();
@@ -203,7 +203,7 @@ fn validate(data: &str) -> &str {
     let mut request: AuthRequest = parse_message(data).unwrap();
 
     // check signature
-    match validate_signature(&request) {
+    match validate_signature(&request, auth_signature_address) {
         Ok(()) => (),
         Err(error) => return "invalid signature",
     }
